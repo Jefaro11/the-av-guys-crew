@@ -4,7 +4,14 @@ self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = {title:'The AV Guys Crew',body:event.data?.text()||'New crew alert'}; }
   const title = data.title || 'The AV Guys Crew';
-  const options = { body: data.body || 'You have a new crew notification.', icon: new URL('icon-192.png', self.registration.scope).toString(), badge: new URL('icon-192.png', self.registration.scope).toString(), data: { url: data.url || self.registration.scope, event_code: data.event_code || '' }, tag: data.tag || 'avguys-crew', renotify: true };
+  const options = {
+    body: data.body || 'You have a new crew notification.',
+    icon: new URL('icon.svg', self.registration.scope).toString(),
+    badge: new URL('icon.svg', self.registration.scope).toString(),
+    data: { url: data.url || self.registration.scope, event_code: data.event_code || '' },
+    tag: data.tag || 'avguys-crew',
+    renotify: true
+  };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 self.addEventListener('notificationclick', event => {
