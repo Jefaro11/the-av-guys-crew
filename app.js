@@ -86,7 +86,8 @@ async function enablePush(){
 function bytes(b64){const pad='='.repeat((4-b64.length%4)%4);const raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from([...raw],c=>c.charCodeAt(0));}
 async function markRead(id){const r=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',id);if(r.error)toast(r.error.message);else{await loadData();render();}}
 
-$('loginTab').onclick=authLogin; $('signupTab').onclick=authSignup; $('forgotPassword').onclick=authReset;
+$('loginTab').onclick=authLogin; $('signupTab').onclick=authSignup;
+$('togglePassword').onclick=()=>{const i=$('password'), b=$('togglePassword'); const show=i.type==='password'; i.type=show?'text':'password'; b.textContent=show?'Hide':'Show'; b.setAttribute('aria-label',show?'Hide password':'Show password'); b.setAttribute('aria-pressed',String(show));}; $('forgotPassword').onclick=authReset;
 $('authForm').onsubmit=async e=>{e.preventDefault();try{loading(true,$('loginTab').classList.contains('active')?'Signing in…':'Creating account…');const email=$('email').value.trim(),password=$('password').value,name=$('fullName').value.trim();let r;if($('loginTab').classList.contains('active'))r=await supabase.auth.signInWithPassword({email,password});else r=await supabase.auth.signUp({email,password,options:{data:{full_name:name,role:'crew'}}});if(r.error)throw r.error;if(!r.data.session){toast('Account created. Check your email to confirm, then sign in.');authLogin();return;}await boot();}catch(e){toast(e.message||String(e));}finally{loading(false);}};
 $('pushButton').onclick=enablePush; $('signOut').onclick=async()=>{await supabase.auth.signOut();session=null;show('auth');authLogin();};
 $('tabEvents').onclick=()=>{tab='events';render();}; $('tabAlerts').onclick=()=>{tab='alerts';render();};
