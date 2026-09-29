@@ -1,2 +1,2 @@
-The AV Guys Crew PWA v0.1.3 — hosted build
-Fix: browser uses the Supabase public Auth/database key; crew-web-config is used only for the Web Push VAPID public key.\n
+The AV Guys Crew PWA v0.1.4 — GitHub Pages build
+Fixes: browser uses the Supabase public Auth/database key; Web Push config uses the VAPID public key separately; hosted build uses the existing SVG app icon and removes PNG asset dependencies.
