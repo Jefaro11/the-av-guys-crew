@@ -1,8 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const SUPABASE_URL = 'https://aajeoloaenfewxololpj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhamVvbG9hZW5mZXd4b2xvbHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2MTU2ODEsImV4cCI6MjEwNjE5MTY4MX0.HySD4i9RNaoR62Tt6AVGXZlC3NWvjgSh3_aHNWS-lEI';
 const CONFIG_URL = SUPABASE_URL + '/functions/v1/crew-web-config';
 const APP_BASE = new URL('./', window.location.href).pathname;
+
+// The browser uses a public Supabase key for Auth/database.
+// The VAPID public key returned by crew-web-config is used only for Web Push.
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -10,7 +15,7 @@ const dateFmt = v => { if(!v) return '—'; const d=new Date(v); return Number.i
 const timeFmt = v => { if(!v) return '—'; const d=new Date(v); return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); };
 const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-let supabase, session=null, profile=null, assignments=[], notifications=[], tab='events', pushEnabled=false;
+let session=null, profile=null, assignments=[], notifications=[], tab='events', pushEnabled=false;
 
 function toast(msg){ const el=$('toast'); el.textContent=msg; el.classList.remove('hidden'); clearTimeout(window.__toast); window.__toast=setTimeout(()=>el.classList.add('hidden'),3500); }
 function loading(on,msg){ $('loading').classList.toggle('hidden',!on); if(msg) $('loadingText').textContent=msg; }
@@ -53,9 +58,6 @@ async function loadData(){
 async function boot(){
   try{
     loading(true,'Loading crew portal…');
-    const c=await fetch(CONFIG_URL); const cfg=await c.json();
-    if(!c.ok||!cfg.publicKey) throw new Error(cfg.error||'Could not load crew configuration');
-    supabase=createClient(SUPABASE_URL,cfg.publicKey,{auth:{persistSession:true,autoRefreshToken:true}});
     const r=await supabase.auth.getSession(); if(r.error) throw r.error;
     session=r.data.session;
     if(!session){show('auth');authLogin();return;}
