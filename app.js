@@ -24,6 +24,7 @@ function loading(on,msg){ $('loading').classList.toggle('hidden',!on); if(msg) $
 function show(id){ ['auth','app','loading'].forEach(x=>$(x).classList.add('hidden')); $(id).classList.remove('hidden'); }
 function authLogin(){ $('loginTab').classList.add('active'); $('signupTab').classList.remove('active'); $('nameWrap').classList.add('hidden'); $('authTitle').textContent='Crew access'; $('authSubtitle').textContent='Sign in to see your AV Guys events and crew calls.'; $('authSubmit').textContent='Sign in'; $('signupNote').textContent=''; }
 function authSignup(){ $('loginTab').classList.remove('active'); $('signupTab').classList.add('active'); $('nameWrap').classList.remove('hidden'); $('authTitle').textContent='Create your crew account'; $('authSubtitle').textContent='Use the same email address that The AV Guys has on your crew record.'; $('authSubmit').textContent='Create account'; $('signupNote').innerHTML='<div class="tiny">Check your email if confirmation is requested.</div>'; }
+function authReset(){ const email=$('email').value.trim(); if(!email){toast('Enter your email first, then tap Forgot password.');$('email').focus();return;} supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.href}).then(r=>{if(r.error)throw r.error;toast('Password reset email sent. Check your email.');}).catch(e=>toast(e.message||String(e))); }
 function render(){
   $('alertCount').textContent=String(notifications.filter(n=>!n.read_at).length);
   $('alertCount').classList.toggle('hidden',notifications.every(n=>n.read_at));
@@ -85,7 +86,7 @@ async function enablePush(){
 function bytes(b64){const pad='='.repeat((4-b64.length%4)%4);const raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from([...raw],c=>c.charCodeAt(0));}
 async function markRead(id){const r=await supabase.from('notifications').update({read_at:new Date().toISOString()}).eq('id',id);if(r.error)toast(r.error.message);else{await loadData();render();}}
 
-$('loginTab').onclick=authLogin; $('signupTab').onclick=authSignup;
+$('loginTab').onclick=authLogin; $('signupTab').onclick=authSignup; $('forgotPassword').onclick=authReset;
 $('authForm').onsubmit=async e=>{e.preventDefault();try{loading(true,$('loginTab').classList.contains('active')?'Signing in…':'Creating account…');const email=$('email').value.trim(),password=$('password').value,name=$('fullName').value.trim();let r;if($('loginTab').classList.contains('active'))r=await supabase.auth.signInWithPassword({email,password});else r=await supabase.auth.signUp({email,password,options:{data:{full_name:name,role:'crew'}}});if(r.error)throw r.error;if(!r.data.session){toast('Account created. Check your email to confirm, then sign in.');authLogin();return;}await boot();}catch(e){toast(e.message||String(e));}finally{loading(false);}};
 $('pushButton').onclick=enablePush; $('signOut').onclick=async()=>{await supabase.auth.signOut();session=null;show('auth');authLogin();};
 $('tabEvents').onclick=()=>{tab='events';render();}; $('tabAlerts').onclick=()=>{tab='alerts';render();};
