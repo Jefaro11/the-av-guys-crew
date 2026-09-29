@@ -1,2 +1,2 @@
-The AV Guys Crew PWA v0.1.4 — GitHub Pages build
-Fixes: browser uses the Supabase public Auth/database key; Web Push config uses the VAPID public key separately; hosted build uses the existing SVG app icon and removes PNG asset dependencies.
+The AV Guys Crew PWA v0.2.0
+GitHub Pages build with crew response actions and event equipment control via QR/manual scanning.
