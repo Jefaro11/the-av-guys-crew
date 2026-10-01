@@ -2,17 +2,18 @@ const SUPABASE_URL="https://aajeoloaenfewxololpj.supabase.co";
 const SUPABASE_KEY="sb_publishable_IwUHY90pADW53KoHEHvEtA_ik7r8Vlq";
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
-let equipment=[],events=[],locations=[],maintenance=[],quotes=[],scanner=null,currentAllocations=[];
+let equipment=[],events=[],locations=[],maintenance=[],quotes=[],quoteItems=[],scanner=null,currentAllocations=[];
 
 function esc(v){return String(v??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}
 async function load(){
-  const [a,b,c,d,q]=await Promise.all([
+  const [a,b,c,d,q,qi]=await Promise.all([
     sb.from("equipment_assets").select("*").order("equipment_item"),
     sb.from("events").select("*").order("start_date",{ascending:false}),
     sb.from("warehouse_locations").select("*").order("name"),
-    sb.from("warehouse_maintenance").select("*").order("opened_at",{ascending:false}), sb.from("client_quotes").select("*").order("quote_date",{ascending:false})
+    sb.from("warehouse_maintenance").select("*").order("opened_at",{ascending:false}), sb.from("client_quotes").select("*").order("quote_date",{ascending:false}),
+    sb.from("client_quote_items").select("*").order("created_at")
   ]);
-  equipment=a.data||[];events=b.data||[];locations=c.data||[];maintenance=d.data||[];quotes=q.data||[];
+  equipment=a.data||[];events=b.data||[];locations=c.data||[];maintenance=d.data||[];quotes=q.data||[];quoteItems=qi.data||[];
 }
 function page(p){
   document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.page===p));
@@ -30,17 +31,30 @@ function render(p){
 }
 
 function quotesPage(){
-  const rows=quotes.map(q=>"<tr><td><b>"+esc(q.quote_no||"—")+"</b></td><td>"+esc(q.event_name||"—")+"</td><td>"+esc(q.customer_code||"—")+"</td><td>"+esc(q.quote_date||"—")+"</td><td>"+esc(q.status||"—")+"</td><td>"+esc(q.total??"—")+"</td><td><button class='mini' onclick='createEventFromQuote(""+q.id+"")'>Create event</button></td></tr>").join("");
-  $("content").innerHTML="<div class='panel'><div class='pick-head'><div><span class='eyebrow'>AV GUYS DATABASE</span><h3>Quotes</h3><p class='muted'>Create a warehouse event directly from an AV Guys quote.</p></div></div><div class='table-wrap'><table><thead><tr><th>Quote</th><th>Event</th><th>Client</th><th>Date</th><th>Status</th><th>Total</th><th></th></tr></thead><tbody>"+rows+"</tbody></table></div></div>";
+  const rows=quotes.map(q=>'<tr><td><b>'+esc(q.quote_no||"—")+'</b></td><td>'+esc(q.event_name||"—")+'</td><td>'+esc(q.customer_code||"—")+'</td><td>'+esc(q.quote_date||"—")+'</td><td>'+esc(q.status||"—")+'</td><td>'+esc(q.total??"—")+'</td><td><button class="mini" onclick="quoteEquipmentDialog(\''+q.id+'\')">+ Equipment</button> <button class="mini" onclick="createEventFromQuote(\''+q.id+'\')">Create event</button></td></tr>').join("");
+  $("content").innerHTML="<div class='panel'><div class='pick-head'><div><span class='eyebrow'>AV GUYS DATABASE</span><h3>Quotes</h3><p class='muted'>Add equipment from the central inventory, then convert the quote into a warehouse pick list.</p></div></div><div class='table-wrap'><table><thead><tr><th>Quote</th><th>Event</th><th>Client</th><th>Date</th><th>Status</th><th>Total</th><th></th></tr></thead><tbody>"+rows+"</tbody></table></div></div>";
+}
+async function quoteEquipmentDialog(quoteId){
+  const q=quotes.find(x=>x.id===quoteId);if(!q)return;
+  const code=prompt("Equipment code from AV Guys inventory");if(code===null)return;
+  const found=equipment.find(x=>x.equipment_code.toLowerCase()===code.trim().toLowerCase());
+  if(!found){alert("Equipment code not found.");return}
+  const qty=Math.max(1,Number(prompt("Quantity","1")||1));
+  const r=await sb.from("client_quote_items").insert({quote_id:quoteId,item_type:"equipment",equipment_code:found.equipment_code,description:found.equipment_item,category:found.category,quantity:qty});
+  if(r.error){alert(r.error.message);return}
+  await load();quotesPage();
 }
 async function createEventFromQuote(id){
-  const q=quotes.find(x=>x.id===id); if(!q)return;
+  const q=quotes.find(x=>x.id===id);if(!q)return;
   const existing=events.find(e=>e.source_quote_id===q.id || (q.event_code && e.event_code===q.event_code));
-  if(existing){alert("This quote is already linked to event "+existing.event_code+"."); page("events"); setTimeout(()=>{if($("eventPick")){$("eventPick").value=existing.event_code;loadEventAlloc()}},50); return;}
-  const code=(q.event_code||prompt("Event code",q.quote_no||"EVT-"+Date.now())||"").trim(); if(!code)return;
+  if(existing){alert("This quote is already linked to event "+existing.event_code+".");page("events");setTimeout(()=>{if($("eventPick")){$("eventPick").value=existing.event_code;loadEventAlloc()}},50);return}
+  const code=(q.event_code||prompt("Event code",q.quote_no||"EVT-"+Date.now())||"").trim();if(!code)return;
   const r=await sb.from("events").insert({event_code:code,event_name:q.event_name||("Event "+code),start_date:q.quote_date||null,status:"planned",source_quote_id:q.id,source_quote_no:q.quote_no||null}).select().single();
   if(r.error){alert(r.error.message);return}
-  await load(); page("events"); setTimeout(()=>{if($("eventPick")){$("eventPick").value=code;loadEventAlloc()}},50);
+  const sync=await sb.rpc("sync_quote_to_event",{p_quote_id:q.id,p_event_code:code});
+  if(sync.error)alert("Event created, but equipment sync failed: "+sync.error.message);
+  else if(Number(sync.data||0)===0 && quoteItems.some(i=>i.quote_id===q.id&&i.item_type==="equipment"))alert("Event created, but none of the quote equipment codes matched active warehouse equipment.");
+  await load();page("events");setTimeout(()=>{if($("eventPick")){$("eventPick").value=code;loadEventAlloc()}},50);
 }
 function mobileScannerPage(){
   $("content").innerHTML="<div class='panel mobile-scanner'><div class='pick-head'><div><span class='eyebrow'>FIELD MODE</span><h3>Warehouse Scanner</h3><p class='muted'>Designed for iPhone / iPad. Select the event, then scan continuously.</p></div></div><div class='toolbar'><select id='mobileEvent'><option value=''>Select event…</option>"+events.map(e=>"<option value='"+esc(e.event_code)+"'>"+esc(e.event_code)+" — "+esc(e.event_name)+"</option>").join("")+"</select></div><div class='mobile-scan-actions'><button class='primary' onclick='mobileScanStart()'>SCAN TO PACK</button><button class='secondary' onclick='mobileDispatchMode()'>DISPATCH</button><button class='secondary' onclick='mobileReturnMode()'>RETURN</button></div><div id='mobileReader' class='reader'></div><div id='mobileMsg' class='scan-msg'></div></div>";
