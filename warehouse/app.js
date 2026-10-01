@@ -2,18 +2,21 @@ const SUPABASE_URL="https://aajeoloaenfewxololpj.supabase.co";
 const SUPABASE_KEY="sb_publishable_IwUHY90pADW53KoHEHvEtA_ik7r8Vlq";
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
-let equipment=[],events=[],locations=[],maintenance=[],quotes=[],quoteItems=[],scanner=null,currentAllocations=[];
+let equipment=[],events=[],locations=[],maintenance=[],quotes=[],quoteItems=[],scanner=null,currentAllocations=[],warehouseUsers=[],scanLogs=[];
 
 function esc(v){return String(v??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}
 async function load(){
-  const [a,b,c,d,q,qi]=await Promise.all([
+  const [a,b,c,d,q,qi,u,sl]=await Promise.all([
     sb.from("equipment_assets").select("*").order("equipment_item"),
     sb.from("events").select("*").order("start_date",{ascending:false}),
     sb.from("warehouse_locations").select("*").order("name"),
-    sb.from("warehouse_maintenance").select("*").order("opened_at",{ascending:false}), sb.from("client_quotes").select("*").order("quote_date",{ascending:false}),
-    sb.from("client_quote_items").select("*").order("created_at")
+    sb.from("warehouse_maintenance").select("*").order("opened_at",{ascending:false}),
+    sb.from("client_quotes").select("*").order("quote_date",{ascending:false}),
+    sb.from("client_quote_items").select("*").order("created_at"),
+    sb.from("profiles").select("id,full_name,email,role,warehouse_role").order("full_name"),
+    sb.from("equipment_scan_logs").select("*").order("created_at",{ascending:false}).limit(100)
   ]);
-  equipment=a.data||[];events=b.data||[];locations=c.data||[];maintenance=d.data||[];quotes=q.data||[];quoteItems=qi.data||[];
+  equipment=a.data||[];events=b.data||[];locations=c.data||[];maintenance=d.data||[];quotes=q.data||[];quoteItems=qi.data||[];warehouseUsers=u.data||[];scanLogs=sl.data||[];
 }
 function page(p){
   document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.page===p));
@@ -28,6 +31,7 @@ function render(p){
   if(p==="maintenance")return tablePage("Maintenance",maintenance,["equipment_code","issue","priority","status","opened_at"]);
   if(p==="scan")return scanPage();
   if(p==="reports")return reports();
+  if(p==="users")return usersPage();
 }
 
 function quotesPage(){
@@ -199,6 +203,17 @@ async function addEquipment(){let code=prompt("Equipment code");if(!code)return;
 function tablePage(title,arr,cols){$("content").innerHTML='<div class="panel"><div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c.replaceAll("_"," ")+'</th>').join("")+'</tr></thead><tbody>'+arr.map(x=>'<tr>'+cols.map(c=>'<td>'+esc(x[c]??"—")+'</td>').join("")+'</tr>').join("")+'</tbody></table></div></div>'}
 function scanPage(){$("content").innerHTML='<div class="panel"><h3>Equipment check-in / check-out</h3><p>Use this for general warehouse movements. For an event, the Pick & Pack screen is recommended.</p><div class="toolbar"><input id="scanCode" placeholder="Scan equipment code / QR" autofocus><select id="action"><option value="checkout">Check out</option><option value="checkin">Check in</option></select><input id="scanEvent" placeholder="Event code (optional)"><input id="qty" type="number" value="1" min="1"><button class="primary" onclick="scan()">Apply</button></div><div id="scanResult"></div></div>'}
 async function scan(){let code=$("scanCode").value.trim(),qty=Math.max(1,Number($("qty").value||1)),act=$("action").value,event=$("scanEvent").value.trim()||null;if(!code){$("scanResult").innerHTML='<p class="danger">Scan or enter an equipment code.</p>';return}$("scanResult").innerHTML="<p>Processing…</p>";const r=await sb.rpc("warehouse_scan",{p_equipment_code:code,p_action:act,p_quantity:qty,p_event_code:event,p_note:null});if(r.error){$("scanResult").innerHTML='<p class="danger">'+esc(r.error.message)+'</p>';return}await load();const d=r.data;$("scanResult").innerHTML='<p class="good">✓ '+esc(d.equipment_item)+' — available: <b>'+d.available_quantity+'</b></p>';$("scanCode").value="";$("scanCode").focus()}
+function usersPage(){
+  const rows=warehouseUsers.map(u=>'<tr><td><b>'+esc(u.full_name||"Unnamed")+'</b><small>'+esc(u.email||"")+'</small></td><td>'+esc(u.role||"crew")+'</td><td><select class="role-select" data-user-role="'+esc(u.id)+'"><option value="none">No warehouse access</option><option value="storekeeper" '+(u.warehouse_role==="storekeeper"?"selected":"")+'>Storekeeper</option><option value="manager" '+(u.warehouse_role==="manager"?"selected":"")+'>Manager</option></select></td><td><button class="mini" onclick="setWarehouseRole(\''+esc(u.id)+'\')">Save</button></td></tr>').join("");
+  const activity=scanLogs.slice(0,25).map(l=>{const u=warehouseUsers.find(x=>x.id===l.crew_user_id);return '<tr><td>'+esc(l.created_at||"—")+'</td><td>'+esc(u?.full_name||u?.email||l.crew_user_id)+'</td><td>'+esc(l.action)+'</td><td>'+esc(l.equipment_code)+'</td><td>'+esc(l.quantity)+'</td><td>'+esc(l.event_code||"—")+'</td></tr>'}).join("");
+  $("content").innerHTML='<div class="panel"><div class="pick-head"><div><span class="eyebrow">ACCESS CONTROL</span><h3>Warehouse Users</h3><p class="muted">Assign Storekeeper or Manager access to existing app accounts. Every warehouse scan is recorded against the signed-in user.</p></div></div><div class="table-wrap"><table><thead><tr><th>User</th><th>App role</th><th>Warehouse role</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div><div class="panel"><h3>Recent warehouse activity</h3><div class="table-wrap"><table><thead><tr><th>Time</th><th>User</th><th>Action</th><th>Equipment</th><th>Qty</th><th>Event</th></tr></thead><tbody>'+activity+'</tbody></table></div></div>';
+}
+async function setWarehouseRole(id){
+  const sel=document.querySelector('[data-user-role="'+id+'"]');if(!sel)return;
+  const r=await sb.rpc("set_warehouse_user_role",{p_user_id:id,p_role:sel.value});
+  if(r.error){alert(r.error.message);return}
+  await load();usersPage();
+}
 function reports(){$("content").innerHTML='<div class="grid"><div class="stat"><label>Inventory lines</label><strong>'+equipment.length+'</strong></div><div class="stat"><label>Allocated / away</label><strong>'+equipment.reduce((s,x)=>s+(x.total_quantity-x.available_quantity),0)+'</strong></div><div class="stat"><label>Locations</label><strong>'+locations.length+'</strong></div><div class="stat"><label>Maintenance cases</label><strong>'+maintenance.length+'</strong></div></div><div class="panel"><h3>Inventory by category</h3>'+[...new Set(equipment.map(x=>x.category||"Uncategorised"))].map(c=>'<div class="event-line"><b>'+esc(c)+'</b><span>'+equipment.filter(x=>(x.category||"Uncategorised")===c).length+' lines</span></div>').join("")+'</div>'}
 document.querySelectorAll(".nav").forEach(x=>x.onclick=()=>page(x.dataset.page));
 $("refresh").onclick=async()=>{await load();page(document.querySelector(".nav.active").dataset.page)};
