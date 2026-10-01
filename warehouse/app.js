@@ -2,17 +2,17 @@ const SUPABASE_URL="https://aajeoloaenfewxololpj.supabase.co";
 const SUPABASE_KEY="sb_publishable_IwUHY90pADW53KoHEHvEtA_ik7r8Vlq";
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
-let equipment=[],events=[],locations=[],maintenance=[],scanner=null,currentAllocations=[];
+let equipment=[],events=[],locations=[],maintenance=[],quotes=[],scanner=null,currentAllocations=[];
 
 function esc(v){return String(v??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}
 async function load(){
-  const [a,b,c,d]=await Promise.all([
+  const [a,b,c,d,q]=await Promise.all([
     sb.from("equipment_assets").select("*").order("equipment_item"),
     sb.from("events").select("*").order("start_date",{ascending:false}),
     sb.from("warehouse_locations").select("*").order("name"),
-    sb.from("warehouse_maintenance").select("*").order("opened_at",{ascending:false})
+    sb.from("warehouse_maintenance").select("*").order("opened_at",{ascending:false}), sb.from("client_quotes").select("*").order("quote_date",{ascending:false})
   ]);
-  equipment=a.data||[];events=b.data||[];locations=c.data||[];maintenance=d.data||[];
+  equipment=a.data||[];events=b.data||[];locations=c.data||[];maintenance=d.data||[];quotes=q.data||[];
 }
 function page(p){
   document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.page===p));
@@ -22,11 +22,54 @@ function page(p){
 function render(p){
   if(p==="dashboard")return dashboard();
   if(p==="equipment")return equipmentPage();
-  if(p==="events")return eventsPage();
+  if(p==="events")return eventsPage(); if(p==="quotes")return quotesPage(); if(p==="mobile")return mobileScannerPage();
   if(p==="locations")return tablePage("Warehouse Locations",locations,["name","location_type","description"]);
   if(p==="maintenance")return tablePage("Maintenance",maintenance,["equipment_code","issue","priority","status","opened_at"]);
   if(p==="scan")return scanPage();
   if(p==="reports")return reports();
+}
+
+function quotesPage(){
+  const rows=quotes.map(q=>"<tr><td><b>"+esc(q.quote_no||"—")+"</b></td><td>"+esc(q.event_name||"—")+"</td><td>"+esc(q.customer_code||"—")+"</td><td>"+esc(q.quote_date||"—")+"</td><td>"+esc(q.status||"—")+"</td><td>"+esc(q.total??"—")+"</td><td><button class='mini' onclick='createEventFromQuote(""+q.id+"")'>Create event</button></td></tr>").join("");
+  $("content").innerHTML="<div class='panel'><div class='pick-head'><div><span class='eyebrow'>AV GUYS DATABASE</span><h3>Quotes</h3><p class='muted'>Create a warehouse event directly from an AV Guys quote.</p></div></div><div class='table-wrap'><table><thead><tr><th>Quote</th><th>Event</th><th>Client</th><th>Date</th><th>Status</th><th>Total</th><th></th></tr></thead><tbody>"+rows+"</tbody></table></div></div>";
+}
+async function createEventFromQuote(id){
+  const q=quotes.find(x=>x.id===id); if(!q)return;
+  const existing=events.find(e=>e.source_quote_id===q.id || (q.event_code && e.event_code===q.event_code));
+  if(existing){alert("This quote is already linked to event "+existing.event_code+"."); page("events"); setTimeout(()=>{if($("eventPick")){$("eventPick").value=existing.event_code;loadEventAlloc()}},50); return;}
+  const code=(q.event_code||prompt("Event code",q.quote_no||"EVT-"+Date.now())||"").trim(); if(!code)return;
+  const r=await sb.from("events").insert({event_code:code,event_name:q.event_name||("Event "+code),start_date:q.quote_date||null,status:"planned",source_quote_id:q.id,source_quote_no:q.quote_no||null}).select().single();
+  if(r.error){alert(r.error.message);return}
+  await load(); page("events"); setTimeout(()=>{if($("eventPick")){$("eventPick").value=code;loadEventAlloc()}},50);
+}
+function mobileScannerPage(){
+  $("content").innerHTML="<div class='panel mobile-scanner'><div class='pick-head'><div><span class='eyebrow'>FIELD MODE</span><h3>Warehouse Scanner</h3><p class='muted'>Designed for iPhone / iPad. Select the event, then scan continuously.</p></div></div><div class='toolbar'><select id='mobileEvent'><option value=''>Select event…</option>"+events.map(e=>"<option value='"+esc(e.event_code)+"'>"+esc(e.event_code)+" — "+esc(e.event_name)+"</option>").join("")+"</select></div><div class='mobile-scan-actions'><button class='primary' onclick='mobileScanStart()'>SCAN TO PACK</button><button class='secondary' onclick='mobileDispatchMode()'>DISPATCH</button><button class='secondary' onclick='mobileReturnMode()'>RETURN</button></div><div id='mobileReader' class='reader'></div><div id='mobileMsg' class='scan-msg'></div></div>";
+}
+async function mobileScanStart(){await mobileScan("pack")}
+async function mobileDispatchMode(){await mobileScan("dispatch")}
+async function mobileReturnMode(){await mobileScan("return")}
+async function mobileScan(mode){
+  const eventCode=$("mobileEvent").value;if(!eventCode){$("mobileMsg").textContent="Select an event first.";return}
+  if(!window.Html5Qrcode){$("mobileMsg").textContent="Camera scanner is still loading.";return}
+  if(scanner){try{await scanner.stop()}catch{}}
+  scanner=new Html5Qrcode("mobileReader");$("mobileMsg").textContent="Point the camera at an equipment QR code.";
+  try{await scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:250,height:250}},async raw=>{
+    const found=equipment.find(x=>x.equipment_code===raw||x.qr_code===raw);
+    if(!found){$("mobileMsg").textContent="Equipment not found: "+raw;return}
+    const x=await allocationFor(eventCode,found.equipment_code);if(!x){$("mobileMsg").textContent=found.equipment_code+" is not required for this event.";return}
+    let r;
+    if(mode==="pack"){if(x.required_qty<=x.packed_qty){$("mobileMsg").textContent="Already fully packed.";return}r=await sb.rpc("warehouse_event_update",{p_event_code:eventCode,p_equipment_code:found.equipment_code,p_stage:"packed",p_quantity:x.packed_qty+1})}
+    if(mode==="dispatch"){if(x.packed_qty<=x.dispatched_qty){$("mobileMsg").textContent="Nothing waiting for dispatch.";return}r=await sb.rpc("warehouse_scan",{p_equipment_code:found.equipment_code,p_action:"checkout",p_quantity:1,p_event_code:eventCode,p_note:"Mobile dispatch"})}
+    if(mode==="return"){if(x.dispatched_qty<=x.returned_qty+x.damaged_qty){$("mobileMsg").textContent="No outstanding quantity to return.";return}r=await sb.rpc("warehouse_scan",{p_equipment_code:found.equipment_code,p_action:"checkin",p_quantity:1,p_event_code:eventCode,p_note:"Mobile return"})}
+    if(r&&r.error){$("mobileMsg").textContent=r.error.message;return}
+    $("mobileMsg").textContent="✓ "+found.equipment_code+" — "+mode;
+    await load();if(scanner){try{await scanner.stop()}catch{}scanner=null}
+  },()=>{})}catch(e){$("mobileMsg").textContent="Camera unavailable. Allow camera access and use HTTPS."}
+}
+function printQrLabels(){
+  const list=equipment.filter(x=>x.active!==false&&(x.qr_code||x.equipment_code));const w=window.open("","_blank");if(!w)return;
+  w.document.write("<!doctype html><html><head><title>THE AV GUYS — QR Labels</title><script src='https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js'><\\/script><style>body{font-family:Arial;margin:20px}.sheet{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.label{border:1px solid #ccc;padding:12px;text-align:center;break-inside:avoid}.code{font-size:16px;font-weight:700}.name{font-size:12px;margin:4px 0 8px;color:#555}.qr{display:grid;place-items:center}@media print{button{display:none}}</style></head><body><button onclick='print()'>Print labels</button><div class='sheet'>"+list.map((x,i)=>"<div class='label'><div class='code'>"+esc(x.equipment_code)+"</div><div class='name'>"+esc(x.equipment_item)+"</div><div id='q"+i+"' class='qr'></div></div>").join("")+"</div><script>const d="+JSON.stringify(list.map(x=>x.qr_code||x.equipment_code))+";d.forEach((v,i)=>new QRCode(document.getElementById('q'+i),{text:v,width:110,height:110}));<\\/script></body></html>");
+  w.document.close();
 }
 function eventsPage(){
   $("content").innerHTML='<div class="panel pick-panel"><div class="toolbar"><select id="eventPick"><option value="">Select event…</option>'+
@@ -137,7 +180,7 @@ async function startPackScanner(){
   }catch(e){reader.classList.add("hidden");setPackMsg("Camera unavailable. Allow camera access and use HTTPS.",true)}
 }
 function dashboard(){$("content").innerHTML='<div class="grid"><div class="stat"><label>Equipment lines</label><strong>'+equipment.length+'</strong></div><div class="stat"><label>Total units</label><strong>'+equipment.reduce((s,x)=>s+(x.total_quantity||0),0)+'</strong></div><div class="stat"><label>Available units</label><strong>'+equipment.reduce((s,x)=>s+(x.available_quantity||0),0)+'</strong></div><div class="stat"><label>Open repairs</label><strong>'+maintenance.filter(x=>x.status!=="closed").length+'</strong></div></div><div class="panel"><h3>Upcoming events</h3>'+events.slice(0,8).map(e=>'<div class="event-line"><b>'+esc(e.event_name)+'</b><span>'+esc(e.start_date||"—")+' · '+esc(e.status||"")+'</span></div>').join("")+'</div>'}
-function equipmentPage(){$("content").innerHTML='<div class="panel"><div class="toolbar"><input id="q" placeholder="Search equipment, code, category…"><button class="primary" onclick="addEquipment()">+ Add equipment</button></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Equipment</th><th>Category</th><th>Location</th><th>Total</th><th>Available</th><th>Condition</th></tr></thead><tbody id="rows"></tbody></table></div></div>';const draw=()=>{let q=($("q").value||"").toLowerCase();$("rows").innerHTML=equipment.filter(x=>(x.equipment_code+" "+x.equipment_item+" "+(x.category||"")).toLowerCase().includes(q)).map(x=>'<tr><td>'+esc(x.equipment_code)+'</td><td><b>'+esc(x.equipment_item)+'</b></td><td>'+esc(x.category||"—")+'</td><td>'+esc(x.location||"—")+'</td><td>'+x.total_quantity+'</td><td>'+x.available_quantity+'</td><td><span class="pill '+(x.condition==="good"?"good":"warn")+'">'+esc(x.condition||"unknown")+'</span></td></tr>').join("")};$("q").oninput=draw;draw()}
+function equipmentPage(){$("content").innerHTML='<div class="panel"><div class="toolbar"><input id="q" placeholder="Search equipment, code, category…"><button class="secondary" onclick="printQrLabels()">Print QR labels</button><button class="primary" onclick="addEquipment()">+ Add equipment</button></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Equipment</th><th>Category</th><th>Location</th><th>Total</th><th>Available</th><th>Condition</th></tr></thead><tbody id="rows"></tbody></table></div></div>';const draw=()=>{let q=($("q").value||"").toLowerCase();$("rows").innerHTML=equipment.filter(x=>(x.equipment_code+" "+x.equipment_item+" "+(x.category||"")).toLowerCase().includes(q)).map(x=>'<tr><td>'+esc(x.equipment_code)+'</td><td><b>'+esc(x.equipment_item)+'</b></td><td>'+esc(x.category||"—")+'</td><td>'+esc(x.location||"—")+'</td><td>'+x.total_quantity+'</td><td>'+x.available_quantity+'</td><td><span class="pill '+(x.condition==="good"?"good":"warn")+'">'+esc(x.condition||"unknown")+'</span></td></tr>').join("")};$("q").oninput=draw;draw()}
 async function addEquipment(){let code=prompt("Equipment code");if(!code)return;let item=prompt("Equipment name");if(!item)return;let category=prompt("Category");let qty=Number(prompt("Quantity","1")||1);const r=await sb.from("equipment_assets").insert({equipment_code:code,equipment_item:item,category,total_quantity:qty,available_quantity:qty,active:true,condition:"good",maintenance_status:"ready"});if(r.error)alert(r.error.message);else{await load();equipmentPage()}}
 function tablePage(title,arr,cols){$("content").innerHTML='<div class="panel"><div class="table-wrap"><table><thead><tr>'+cols.map(c=>'<th>'+c.replaceAll("_"," ")+'</th>').join("")+'</tr></thead><tbody>'+arr.map(x=>'<tr>'+cols.map(c=>'<td>'+esc(x[c]??"—")+'</td>').join("")+'</tr>').join("")+'</tbody></table></div></div>'}
 function scanPage(){$("content").innerHTML='<div class="panel"><h3>Equipment check-in / check-out</h3><p>Use this for general warehouse movements. For an event, the Pick & Pack screen is recommended.</p><div class="toolbar"><input id="scanCode" placeholder="Scan equipment code / QR" autofocus><select id="action"><option value="checkout">Check out</option><option value="checkin">Check in</option></select><input id="scanEvent" placeholder="Event code (optional)"><input id="qty" type="number" value="1" min="1"><button class="primary" onclick="scan()">Apply</button></div><div id="scanResult"></div></div>'}
