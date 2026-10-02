@@ -66,7 +66,16 @@ async function boot(){
     const r=await supabase.auth.getSession(); if(r.error) throw r.error;
     session=r.data.session;
     if(!session){show('auth');authLogin();return;}
-    await loadProfile(); await loadData(); show('app'); render();
+    await loadProfile();
+    if(profile?.warehouse_role==='storekeeper'){
+      $('authTitle').textContent='Warehouse account';
+      $('authSubtitle').textContent='This account is restricted to Warehouse operations. Open the separate AV Guys Warehouse app to continue.';
+      $('authForm').classList.add('hidden');
+      document.querySelector('.tabs')?.classList.add('hidden');
+      show('auth');
+      return;
+    }
+    await loadData(); show('app'); render();
   }catch(e){console.error(e);toast(e.message||String(e));show('auth');authLogin();}
   finally{loading(false);}
 }
