@@ -18,6 +18,14 @@ async function load(){
   ]);
   equipment=a.data||[];events=b.data||[];locations=c.data||[];maintenance=d.data||[];quotes=q.data||[];quoteItems=qi.data||[];warehouseUsers=u.data||[];scanLogs=sl.data||[];
 }
+function isWarehouseOnly(){ return profile?.warehouse_role==='storekeeper' || profile?.warehouse_role==='manager'; }
+function isStorekeeper(){ return profile?.warehouse_role==='storekeeper'; }
+function allowedWarehousePage(p){
+  if(isStorekeeper()) return ['dashboard','equipment','events','mobile','locations','maintenance','scan','reports'].includes(p);
+  if(profile?.warehouse_role==='manager') return ['dashboard','equipment','events','mobile','locations','maintenance','scan','reports','users'].includes(p);
+  return true;
+}
+
 function page(p){
   document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.page===p));
   $("title").textContent=p==="scan"?"Scan / Check in-out":p[0].toUpperCase()+p.slice(1);
@@ -217,6 +225,11 @@ async function setWarehouseRole(id){
 function reports(){$("content").innerHTML='<div class="grid"><div class="stat"><label>Inventory lines</label><strong>'+equipment.length+'</strong></div><div class="stat"><label>Allocated / away</label><strong>'+equipment.reduce((s,x)=>s+(x.total_quantity-x.available_quantity),0)+'</strong></div><div class="stat"><label>Locations</label><strong>'+locations.length+'</strong></div><div class="stat"><label>Maintenance cases</label><strong>'+maintenance.length+'</strong></div></div><div class="panel"><h3>Inventory by category</h3>'+[...new Set(equipment.map(x=>x.category||"Uncategorised"))].map(c=>'<div class="event-line"><b>'+esc(c)+'</b><span>'+equipment.filter(x=>(x.category||"Uncategorised")===c).length+' lines</span></div>').join("")+'</div>'}
 document.querySelectorAll(".nav").forEach(x=>x.onclick=()=>page(x.dataset.page));
 $("refresh").onclick=async()=>{await load();page(document.querySelector(".nav.active").dataset.page)};
+function applyWarehousePermissions(){
+  document.querySelectorAll('.nav[data-page="quotes"]').forEach(x=>x.style.display='none');
+  if(isStorekeeper()) document.querySelectorAll('.nav[data-page="users"]').forEach(x=>x.style.display='none');
+}
+
 $("loginBtn").onclick=async()=>{let r=await sb.auth.signInWithPassword({email:$("email").value,password:$("password").value});if(r.error)$("loginMsg").textContent=r.error.message};
 $("logout").onclick=()=>sb.auth.signOut();
-sb.auth.onAuthStateChange((event,session)=>{if(session){$("login").classList.add("hidden");$("app").classList.remove("hidden");load().then(()=>page("dashboard"))}else{$("login").classList.remove("hidden");$("app").classList.add("hidden")}});
+sb.auth.onAuthStateChange(async(event,session)=>{if(session){const p=await sb.from("profiles").select("id,full_name,email,role,warehouse_role").eq("id",session.user.id).maybeSingle();profile=p.data||{role:"crew",warehouse_role:"none"};applyWarehousePermissions();$("login").classList.add("hidden");$("app").classList.remove("hidden");await load();page("dashboard");}else{$("login").classList.remove("hidden");$("app").classList.add("hidden")}});
