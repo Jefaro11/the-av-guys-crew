@@ -2,7 +2,7 @@ const SUPABASE_URL="https://aajeoloaenfewxololpj.supabase.co";
 const SUPABASE_KEY="sb_publishable_IwUHY90pADW53KoHEHvEtA_ik7r8Vlq";
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 const $=id=>document.getElementById(id);
-let equipment=[],events=[],locations=[],maintenance=[],quotes=[],quoteItems=[],scanner=null,currentAllocations=[],warehouseUsers=[],scanLogs=[];
+let equipment=[],events=[],locations=[],maintenance=[],quotes=[],quoteItems=[],scanner=null,currentAllocations=[],warehouseUsers=[],scanLogs=[],profile=null;
 
 function esc(v){return String(v??"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]))}
 async function load(){
