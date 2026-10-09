@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const GEAR_URL='https://aajeoloaenfewxololpj.supabase.co';
-const GEAR_KEY='sb_publishable_IwUHY90pADW53KoHEHvEt_A_ik7r8Vlq';
+const GEAR_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhamVvbG9hZW5mZXd4b2xvbHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2MTU2ODEsImV4cCI6MjEwNjE5MTY4MX0.HySD4i9RNaoR62Tt6AVGXZlC3NWvjgSh3_aHNWS-lEI';
 const gearSb=createClient(GEAR_URL,GEAR_KEY,{auth:{persistSession:true,autoRefreshToken:true}});
 const gEsc=v=>String(v??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const gDate=v=>v?new Date(v).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}):'—';
