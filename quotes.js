@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const QURL='https://aajeoloaenfewxololpj.supabase.co';
-const QKEY='sb_publishable_IwUHY90pADW53KoHEHvEt_A_ik7r8Vlq';
+const QKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhamVvbG9hZW5mZXd4b2xvbHBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2MTU2ODEsImV4cCI6MjEwNjE5MTY4MX0.HySD4i9RNaoR62Tt6AVGXZlC3NWvjgSh3_aHNWS-lEI';
 const qs=createClient(QURL,QKEY,{auth:{persistSession:true,autoRefreshToken:true}});
 const qEsc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money=v=>Number(v||0).toLocaleString('en-MU',{minimumFractionDigits:2,maximumFractionDigits:2});
