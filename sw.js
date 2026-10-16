@@ -1,21 +1,7 @@
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
-self.addEventListener('push', event => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch { data = {title:'The AV Guys Crew',body:event.data?.text()||'New crew alert'}; }
-  const title = data.title || 'The AV Guys Crew';
-  const options = {
-    body: data.body || 'You have a new crew notification.',
-    icon: new URL('icon.svg', self.registration.scope).toString(),
-    badge: new URL('icon.svg', self.registration.scope).toString(),
-    data: { url: data.url || self.registration.scope, event_code: data.event_code || '' },
-    tag: data.tag || 'avguys-crew',
-    renotify: true
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
-});
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  const url = event.notification.data?.url || self.registration.scope;
-  event.waitUntil((async()=>{ const list = await clients.matchAll({type:'window',includeUncontrolled:true}); const same = list.find(c=>c.url.startsWith(self.registration.scope)); if(same){await same.focus(); if('navigate' in same) await same.navigate(url);} else {await clients.openWindow(url);} })());
-});
+const CACHE='avguys-crew-v0.4.0';
+const CORE=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./icon.svg'];
+self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
+self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin||!CORE.some(path=>new URL(path,self.registration.scope).pathname===new URL(e.request.url).pathname))return;e.respondWith(caches.match(e.request).then(c=>c||fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(x=>x.put(e.request,copy)).catch(()=>{});return r;}).catch(()=>caches.match('./'))));});
+self.addEventListener('push',e=>{let d={title:'The AV Guys Crew',body:'You have a new crew update.',url:'./'};try{d={...d,...(e.data?e.data.json():{})}}catch{};e.waitUntil(self.registration.showNotification(d.title,{body:d.body,icon:new URL('icon.svg',self.registration.scope).toString(),badge:new URL('icon.svg',self.registration.scope).toString(),data:{url:d.url||self.registration.scope}}));});
+self.addEventListener('notificationclick',e=>{e.notification.close();const url=e.notification.data?.url||self.registration.scope;e.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(async list=>{const same=list.find(c=>c.url.startsWith(self.registration.scope));if(same){await same.focus();if('navigate' in same)await same.navigate(url);}else await clients.openWindow(url);}));});
